@@ -60,17 +60,7 @@ export default async function handler(req, res) {
         messages: [
           {
             role: "system",
-            content: `You are a viral hook specialist who ALWAYS analyzes script context first.
-            
-CRITICAL RULES:
-1. READ the entire script carefully
-2. IDENTIFY the main topic, emotion, and value proposition
-3. CREATE hooks using ACTUAL words and concepts from the script
-4. NEVER use generic hooks - every hook must be specific to the script content
-5. Match the emotional tone of the script (don't force humor on serious topics)
-6. Promise only what the script actually delivers
-
-Your hooks must feel like they were written specifically for THIS script, not copy-pasted templates.`
+            content: "You are a viral hook specialist with 10+ years of experience in short-form content. Always provide structured, actionable responses."
           },
           { 
             role: "user", 

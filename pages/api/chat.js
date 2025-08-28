@@ -1,1005 +1,153 @@
-import React, { useState, useRef, useCallback, useMemo } from "react"
+// api/chat.js - Vercel에 배포할 백엔드 코드
 
-// === 1. API 주소 설정 ===
-const API_BASE_URL = "https://hook-api-generator.vercel.app"
+// 🔥 메모리 캐시 (API 비용 절감용)
+const cache = new Map();
 
-const TONE_OPTIONS = [
-    "Provocative",
-    "Calm",
-    "Professional",
-    "Humorous",
-    "Dramatic",
-]
-
-const SCORE_THRESHOLDS = {
-    VIRAL: 85,
-    GOOD: 70,
-}
-
-const COLORS = {
-    HIGH_SCORE: "#10b981",
-    MID_SCORE: "#f59e0b",
-    LOW_SCORE: "#ef4444",
-}
-
-// HookService - 강화된 프롬프트 적용
-class HookService {
-    async generateHooks(hookData) {
-        if (!hookData || typeof hookData !== "object") {
-            throw new Error("유효하지 않은 훅 데이터입니다.")
-        }
-
-        try {
-            // 🔥 강화된 프롬프트 - 맥락 분석 추가
-            const userPrompt = `
-You are the TOP 0.1% viral hook specialist who's created hooks for MrBeast, Alex Hormozi, and top creators.
-
-CRITICAL: ANALYZE THE SCRIPT CONTEXT FIRST!
-
-SCRIPT TO ANALYZE:
-"${hookData.script}"
-
-STEP 1: UNDERSTAND THE SCRIPT
-- What is the main topic/theme?
-- What emotion does it evoke? (surprise, fear, joy, anger, curiosity)
-- Who is the target audience?
-- What's the key value/payoff for viewers?
-- Is there a transformation, discovery, or conflict?
-
-STEP 2: MATCH HOOKS TO CONTEXT
-Your hooks MUST:
-- Directly relate to the script's main point
-- Use specific keywords from the script
-- Match the emotional tone of the content
-- Promise what the script actually delivers
-
-TONE: ${hookData.tone}
-${hookData.tone === 'Provocative' ? 'Challenge beliefs, be controversial but relevant to the script' : ''}
-${hookData.tone === 'Calm' ? 'Be gentle but ensure hooks match the scripts peaceful message' : ''}
-${hookData.tone === 'Professional' ? 'Use data/authority that connects to the scripts expertise' : ''}
-${hookData.tone === 'Humorous' ? 'Find the funny angle IN THE SCRIPT, dont force unrelated humor' : ''}
-${hookData.tone === 'Dramatic' ? 'Amplify the tension/conflict already present in the script' : ''}
-
-GENERATE 5 CONTEXTUAL HOOKS:
-1-3: Use proven patterns but WITH SCRIPT'S SPECIFIC WORDS
-4-5: Creative hooks that highlight the script's unique angle
-
-RULES:
-• MAX 10 words
-• Must include at least 1 KEY WORD from the script
-• Must promise what the script delivers (no clickbait)
-• First 3 words = instant attention
-• Make viewer think "this is about ME"
-
-BAD EXAMPLE (generic):
-"Nobody talks about this trick" ❌
-
-GOOD EXAMPLE (contextual):
-If script is about iPhone settings:
-"Your iPhone's hidden battery saver" ✅
-
-If script is about pasta:
-"Italian grandmas hate this pasta mistake" ✅
-
-OUTPUT FORMAT:
-1. [Hook with script keywords] | [Why it works for THIS script] | [TAG]
-2. [Hook with script keywords] | [Why it works for THIS script] | [TAG]
-3. [Hook with script keywords] | [Why it works for THIS script] | [TAG]
-4. [Hook with script keywords] | [Why it works for THIS script] | [TAG]
-5. [Hook with script keywords] | [Why it works for THIS script] | [TAG]
-
-TAGS: CURIOSITY, FEAR, FOMO, SHOCK, SECRET, CONTRAST, EMOTIONAL, URGENCY, FORBIDDEN
-
-Remember: Generic hooks fail. Contextual hooks go viral.`
-
-            const response = await fetch(
-                `${API_BASE_URL}/api/chat?q=${encodeURIComponent(userPrompt)}`
-            )
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}))
-                throw new Error(
-                    errorData.error ||
-                        `HTTP ${response.status}: 훅 생성에 실패했습니다.`
-                )
-            }
-
-            const data = await response.json()
-            const hooksText = data.choices?.[0]?.message?.content || ""
-
-            return { success: true, hooks: hooksText }
-        } catch (error) {
-            if (error instanceof TypeError && error.message.includes("fetch")) {
-                throw new Error("네트워크 연결을 확인해주세요.")
-            }
-            throw error
-        }
-    }
-}
-
-const hookService = new HookService()
-
-// 🔥 스마트 점수 계산 시스템
-const calculateHookScore = (hook, tag, isProven) => {
-    let score = 70; // 기본 점수
-    
-    // 1. 길이 점수 (짧을수록 높음)
-    const wordCount = hook.split(' ').length;
-    if (wordCount <= 5) score += 15;
-    else if (wordCount <= 8) score += 10;
-    else if (wordCount <= 10) score += 5;
-    
-    // 2. 파워 워드 체크
-    const powerWords = ['you', 'your', 'secret', 'never', 'always', 'nobody', 
-                       'everyone', 'stop', 'wait', 'literally', 'actually',
-                       'wrong', 'mistake', 'truth', 'why', 'how'];
-    const hookLower = hook.toLowerCase();
-    powerWords.forEach(word => {
-        if (hookLower.includes(word)) score += 2;
-    });
-    
-    // 3. 숫자 포함 여부
-    if (/\d/.test(hook)) score += 5;
-    
-    // 4. 물음표/느낌표 사용
-    if (hook.includes('?')) score += 3;
-    if (hook.includes('!')) score += 2;
-    
-    // 5. 태그별 가산점
-    const tagScores = {
-        'CURIOSITY': 5,
-        'SHOCK': 7,
-        'SECRET': 8,
-        'FORBIDDEN': 9,
-        'FOMO': 6,
-        'URGENCY': 7,
-        'CONTRAST': 5,
-        'EMOTIONAL': 4
-    };
-    score += tagScores[tag] || 3;
-    
-    // 6. 검증된 패턴 보너스
-    if (isProven) score += 5;
-    
-    // 7. 트렌드 포맷 체크
-    if (hook.startsWith('POV:') || hook.startsWith('Story time:')) score += 5;
-    
-    // 최대 100점으로 제한
-    return Math.min(score, 100);
-};
-
-// 🔥 개선된 파싱 함수
-const parseHooksFromText = (hooksText) => {
-    const lines = hooksText.split("\n").filter((line) => line.trim())
-    const hooks = []
-
-    lines.forEach((line, index) => {
-        const match = line.match(/^\d+\.\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+)/)
-        if (match) {
-            const hookText = match[1].trim()
-            const tag = match[3].trim()
-            const isProven = index < 3
+export default async function handler(req, res) {
+  // ---- 1. CORS 설정 (모든 도메인 허용) ----
+  res.setHeader("Access-Control-Allow-Origin", "*")
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type")
+  
+  // 브라우저 사전 요청(OPTIONS) 처리
+  if (req.method === "OPTIONS") {
+    return res.status(200).end()
+  }
+  
+  // ---- 2. 요청 검증 ----
+  const userMessage = req.query.q || ""
+  
+  if (!userMessage || userMessage.length < 10) {
+    return res.status(400).json({ 
+      error: "Invalid request. Please provide a valid prompt." 
+    })
+  }
+  
+  // 요청 크기 제한 (너무 긴 프롬프트 방지)
+  if (userMessage.length > 5000) {
+    return res.status(400).json({ 
+      error: "Request too large. Maximum 5000 characters." 
+    })
+  }
+  
+  // ---- 3. 캐시 확인 (5분간 유지) ----
+  const cacheKey = userMessage.substring(0, 100); // 캐시 키
+  const cachedData = cache.get(cacheKey);
+  
+  if (cachedData && Date.now() - cachedData.timestamp < 5 * 60 * 1000) {
+    console.log('Cache hit! Returning cached response');
+    return res.status(200).json(cachedData.data);
+  }
+  
+  // ---- 4. OpenAI API 호출 ----
+  const apiKey = process.env.OPENAI_API_KEY
+  
+  if (!apiKey) {
+    return res.status(500).json({ 
+      error: "Server configuration error. API key missing." 
+    })
+  }
+  
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: "gpt-4-turbo-preview", // 더 좋은 품질을 위해 GPT-4 사용 (원하면 gpt-3.5-turbo로 변경 가능)
+        messages: [
+          {
+            role: "system",
+            content: `You are a viral hook specialist who ALWAYS analyzes script context first.
             
-            hooks.push({
-                hook: hookText,
-                score: calculateHookScore(hookText, tag, isProven), // 스마트 점수 적용
-                reason: match[2].trim(),
-                tag: tag,
-                isProven: isProven
-            })
-        } else {
-            // 백업 파싱 로직들...
-            const simpleMatch = line.match(/^\d+\.\s*(.+?)\s*\|\s*(.+)/)
-            if (simpleMatch) {
-                const isProven = index < 3
-                const fallbackTag = isProven ? "APPROVED" : "ORIGINAL"
-                const hookText = simpleMatch[1].trim()
-                
-                hooks.push({
-                    hook: hookText,
-                    score: calculateHookScore(hookText, fallbackTag, isProven),
-                    reason: simpleMatch[2].trim(),
-                    tag: fallbackTag,
-                    isProven: isProven
-                })
-            }
-        }
-    })
+CRITICAL RULES:
+1. READ the entire script carefully
+2. IDENTIFY the main topic, emotion, and value proposition
+3. CREATE hooks using ACTUAL words and concepts from the script
+4. NEVER use generic hooks - every hook must be specific to the script content
+5. Match the emotional tone of the script (don't force humor on serious topics)
+6. Promise only what the script actually delivers
 
-    // 점수 기준으로 정렬 (높은 점수가 위로)
-    hooks.sort((a, b) => b.score - a.score)
-    
-    return hooks
-}
-
-// 🔥 검증된 바이럴 훅 데이터베이스 
-const PROVEN_VIRAL_HOOKS = {
-    curiosity: [
-        { template: "Nobody talks about this {topic} trick", score: 92, reason: "Creates knowledge gap + hidden info", tag: "SECRET" },
-        { template: "I was today years old when I learned this", score: 89, reason: "Viral format + relatable", tag: "SHOCK" },
-        { template: "Wait until you see what happens next", score: 88, reason: "Creates anticipation", tag: "CURIOSITY" },
-        { template: "I can't believe this actually worked", score: 87, reason: "Surprise + proven success", tag: "SHOCK" }
-    ],
-    emotional: [
-        { template: "POV: You finally {achievement}", score: 90, reason: "Trending POV format", tag: "EMOTIONAL" },
-        { template: "This changed my life in {time}", score: 88, reason: "Transformation story", tag: "PERSONAL" },
-        { template: "Stop scrolling. This is important", score: 93, reason: "Direct command + urgency", tag: "URGENCY" }
-    ],
-    challenge: [
-        { template: "99% of people can't {challenge}", score: 91, reason: "Statistical hook + ego challenge", tag: "CONTRAST" },
-        { template: "Only {group} will understand this", score: 85, reason: "Exclusive group appeal", tag: "FOMO" }
-    ],
-    comparison: [
-        { template: "What they don't tell you about {topic}", score: 90, reason: "Hidden truth angle", tag: "SECRET" },
-        { template: "{oldway} ❌ {newway} ✅", score: 88, reason: "Visual comparison format", tag: "CONTRAST" }
-    ],
-    shock: [
-        { template: "Delete this if it goes viral", score: 93, reason: "Scarcity + viral bait", tag: "FORBIDDEN" },
-        { template: "I'm gatekeeping this no more", score: 90, reason: "Exclusive release", tag: "SECRET" }
-    ]
-}
-
-// 🔥 개선된 스크립트 맥락 분석 함수
-function analyzeScriptContext(script) {
-    const scriptLower = script.toLowerCase()
-    
-    // 핵심 키워드 추출
-    const keywords = {
-        curiosity: ['discover', 'secret', 'hidden', 'nobody knows', 'find out', 'reveal', 'truth'],
-        emotional: ['feel', 'life', 'change', 'transform', 'journey', 'story', 'experience'],
-        challenge: ['try', 'test', 'challenge', 'attempt', 'fail', 'succeed', 'impossible'],
-        comparison: ['vs', 'better', 'worse', 'instead', 'wrong', 'right', 'mistake'],
-        shock: ['crazy', 'shock', 'accident', 'unexpected', 'suddenly', 'never', 'always']
-    }
-    
-    // 각 카테고리 점수 계산
-    const scores = {}
-    for (const [category, words] of Object.entries(keywords)) {
-        scores[category] = words.filter(word => scriptLower.includes(word)).length
-    }
-    
-    // 가장 높은 점수의 카테고리 반환
-    const bestCategory = Object.entries(scores)
-        .sort(([,a], [,b]) => b - a)[0][0]
-    
-    return bestCategory
-}
-
-// 🔥 개선된 템플릿 변환 - 스크립트 맥락 반영
-function generateHookFromTemplate(template, script, tone) {
-    let hook = template.template
-    
-    // 스크립트에서 중요 단어 추출 (명사, 동사 위주)
-    const words = script.split(/\s+/)
-    const importantWords = words
-        .filter(w => w.length > 4 && !['this', 'that', 'with', 'from', 'have'].includes(w.toLowerCase()))
-        .slice(0, 5)
-    
-    // 스크립트의 핵심 주제 파악
-    const scriptLower = script.toLowerCase()
-    let mainTopic = importantWords[0] || 'this'
-    
-    // 특정 주제 감지
-    if (scriptLower.includes('iphone') || scriptLower.includes('phone')) mainTopic = 'iPhone'
-    else if (scriptLower.includes('money') || scriptLower.includes('rich')) mainTopic = 'money'
-    else if (scriptLower.includes('relationship') || scriptLower.includes('dating')) mainTopic = 'dating'
-    else if (scriptLower.includes('food') || scriptLower.includes('recipe')) mainTopic = 'recipe'
-    else if (scriptLower.includes('workout') || scriptLower.includes('fitness')) mainTopic = 'fitness'
-    
-    // 동적 변수 교체
-    const replacements = {
-        '{topic}': mainTopic,
-        '{achievement}': importantWords[1] ? `mastered ${importantWords[1]}` : 'made it work',
-        '{time}': script.match(/\d+\s*(day|week|month|year)/i)?.[0] || '30 days',
-        '{challenge}': importantWords[2] ? `do ${importantWords[2]}` : 'do this',
-        '{group}': scriptLower.includes('everyone') ? 'everyone' : 'most people',
-        '{oldway}': importantWords[1] ? `Using ${importantWords[1]}` : 'Old method',
-        '{newway}': importantWords[2] ? `Try ${importantWords[2]}` : 'This method',
-        '{discovery}': importantWords.slice(0, 3).join(' ') || 'this secret',
-        '{industry}': mainTopic.includes('fitness') ? 'fitness' : mainTopic.includes('money') ? 'finance' : 'industry',
-        '{dramatic event}': importantWords.slice(0, 2).join(' ') + ' happened' || 'this happened',
-        '{shocking reason}': `your ${mainTopic} problem` || 'this happens',
-        '{number}': script.match(/\d+/)?.[0] || Math.floor(Math.random() * 10) + 3,
-        '{trait}': mainTopic || 'pro',
-        '{things}': mainTopic + 's' || 'methods'
-    }
-    
-    // 템플릿 변수 교체
-    Object.keys(replacements).forEach(key => {
-        hook = hook.replace(key, replacements[key])
+Your hooks must feel like they were written specifically for THIS script, not copy-pasted templates.`
+          },
+          { 
+            role: "user", 
+            content: userMessage 
+          }
+        ],
+        temperature: 0.8, // 창의성 증가
+        max_tokens: 500,  // 토큰 제한 (비용 절감)
+        presence_penalty: 0.5, // 반복 방지
+        frequency_penalty: 0.5 // 다양성 증가
+      })
     })
     
-    // 톤별 조정 (맥락 유지)
-    if (tone === 'Provocative' && !hook.includes('!')) {
-        hook = hook.charAt(0).toUpperCase() + hook.slice(1) + '!'
-    } else if (tone === 'Calm') {
-        hook = hook.replace(/!+/g, '.').toLowerCase()
-        hook = hook.charAt(0).toUpperCase() + hook.slice(1)
-    } else if (tone === 'Humorous' && !hook.includes('😂')) {
-        const funnyEmojis = ['😂', '💀', '🤣', '😭']
-        hook = hook + ' ' + funnyEmojis[Math.floor(Math.random() * funnyEmojis.length)]
-    } else if (tone === 'Professional') {
-        hook = hook.replace(/!+/g, ':')
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('OpenAI API Error:', errorText)
+      throw new Error(`OpenAI API error: ${response.status}`)
     }
     
-    // 단어 수 체크 (10단어 제한)
-    const words = hook.split(' ')
-    if (words.length > 10) {
-        hook = words.slice(0, 10).join(' ')
+    const data = await response.json()
+    
+    // ---- 5. 응답 검증 ----
+    if (!data.choices || data.choices.length === 0) {
+      throw new Error("Invalid response from OpenAI")
     }
     
-    return {
-        hook: hook,
-        score: template.score + Math.floor(Math.random() * 5),
-        reason: template.reason + ' (Contextually matched)',
-        tag: template.tag,
-        isProven: true,
-        enhanced: true
-    }
-}
-
-// 약한 훅을 검증된 훅으로 교체
-function enhanceWeakHooks(hooks, script, tone) {
-    const sortedHooks = [...hooks].sort((a, b) => a.score - b.score)
-    const weakHooks = sortedHooks.slice(0, 2)
-    const weakIndices = weakHooks.map(weak => hooks.indexOf(weak))
-    
-    const category = analyzeScriptContext(script)
-    console.log(`📊 Script Analysis: Detected "${category}" context from script`)
-    
-    const templatePool = PROVEN_VIRAL_HOOKS[category]
-    
-    const enhancedHooks = [...hooks]
-    const usedIndices = []
-    
-    weakIndices.forEach((index) => {
-        let randomIndex
-        do {
-            randomIndex = Math.floor(Math.random() * templatePool.length)
-        } while (usedIndices.includes(randomIndex))
-        
-        usedIndices.push(randomIndex)
-        const newHook = generateHookFromTemplate(templatePool[randomIndex], script, tone)
-        console.log(`🔄 Replaced weak hook (${hooks[index].score}pts) with proven pattern (${newHook.score}pts)`)
-        enhancedHooks[index] = newHook
+    // ---- 6. 캐시 저장 ----
+    cache.set(cacheKey, {
+      data: data,
+      timestamp: Date.now()
     })
     
-    enhancedHooks.sort((a, b) => b.score - a.score)
+    // 캐시 크기 제한 (최대 100개)
+    if (cache.size > 100) {
+      const firstKey = cache.keys().next().value;
+      cache.delete(firstKey);
+    }
     
-    return {
-        hooks: enhancedHooks,
-        replacedCount: 2
+    // ---- 7. 성공 응답 ----
+    res.status(200).json(data)
+    
+  } catch (error) {
+    console.error('Error details:', error)
+    
+    // 에러 타입별 처리
+    if (error.message.includes('Rate limit')) {
+      return res.status(429).json({ 
+        error: "Too many requests. Please try again later." 
+      })
     }
-}
-
-// 태그 색깔 매핑
-const getTagColor = (tag) => {
-    const tagColors = {
-        'APPROVED': '#10b981',
-        'TRENDING': '#f59e0b',
-        'EMOTIONAL': '#ef4444',
-        'CURIOSITY': '#8b5cf6',
-        'ORIGINAL': '#06b6d4',
-        'SECRET': '#ec4899',
-        'FOMO': '#f59e0b',
-        'CONTRAST': '#ef4444',
-        'FORBIDDEN': '#dc2626',
-        'SHOCK': '#7c3aed',
-        'URGENCY': '#ea580c'
+    
+    if (error.message.includes('API key')) {
+      return res.status(401).json({ 
+        error: "Authentication failed. Invalid API key." 
+      })
     }
-    return tagColors[tag] || '#6b7280'
+    
+    // 일반 에러
+    res.status(500).json({ 
+      error: "Failed to generate hooks. Please try again.",
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    })
+  }
 }
 
-const getScoreColor = (score) => {
-    if (score >= SCORE_THRESHOLDS.VIRAL) return COLORS.HIGH_SCORE
-    if (score >= SCORE_THRESHOLDS.GOOD) return COLORS.MID_SCORE
-    return COLORS.LOW_SCORE
+// ---- 추가 유틸리티 함수 (선택적) ----
+
+// 캐시 초기화 함수 (필요시 사용)
+export function clearCache() {
+  cache.clear()
+  console.log('Cache cleared')
 }
 
-const getScoreLabel = (score) => {
-    if (score >= SCORE_THRESHOLDS.VIRAL) return "VIRAL"
-    if (score >= SCORE_THRESHOLDS.GOOD) return "GOOD"
-    return "OK"
-}
-
-const processApiResponse = (result, script, tone) => {
-    if (result.success && result.hooks) {
-        const parsedHooks = parseHooksFromText(result.hooks)
-        
-        // 🔥 약한 훅 2개를 검증된 바이럴 훅으로 자동 교체
-        if (parsedHooks.length >= 3) {
-            const enhanced = enhanceWeakHooks(parsedHooks, script, tone)
-            console.log(`Replaced ${enhanced.replacedCount} weak hooks with proven viral patterns`)
-            return enhanced.hooks
-        }
-        
-        return parsedHooks
-    }
-    // 폴백 로직
-    return []
-}
-
-export default function HookLab() {
-    const [script, setScript] = useState("")
-    const [isLoading, setIsLoading] = useState(false)
-    const [hooks, setHooks] = useState([])
-    const [tone, setTone] = useState("Provocative")
-    const [copiedIndex, setCopiedIndex] = useState(null)
-    const [error, setError] = useState(null)
-
-    const fileInputRef = useRef(null)
-
-    const handleFileUpload = useCallback((event) => {
-        const file = event.target.files?.[0]
-        if (!file) return
-
-        if (file.type !== "text/plain") {
-            alert("Please upload a .txt file only")
-            return
-        }
-
-        const reader = new FileReader()
-        reader.onload = (e) => {
-            const content = e.target?.result
-            if (typeof content === "string") {
-                setScript(content)
-            }
-        }
-        reader.readAsText(file, "utf-8")
-    }, [])
-
-    const handleGenerate = useCallback(async () => {
-        if (!script.trim()) return
-
-        setIsLoading(true)
-        setError(null)
-        setHooks([])
-
-        try {
-            const result = await hookService.generateHooks({
-                script: script,
-                tone: tone,
-            })
-
-            const processedHooks = processApiResponse(result)
-
-            if (processedHooks.length > 0) {
-                setHooks(processedHooks)
-            } else {
-                throw new Error("유효한 훅이 생성되지 않았습니다.")
-            }
-        } catch (error) {
-            setError(
-                `Sorry, something went wrong. Please try again later. (Error: ${error.message})`
-            )
-        }
-
-        setIsLoading(false)
-    }, [script, tone])
-
-    const handleRegenerate = useCallback(() => {
-        handleGenerate()
-    }, [handleGenerate])
-
-    const copyToClipboard = useCallback(async (text, index) => {
-        try {
-            await navigator.clipboard.writeText(text)
-            setCopiedIndex(index)
-            setTimeout(() => setCopiedIndex(null), 2000)
-        } catch {
-            const textArea = document.createElement("textarea")
-            textArea.value = text
-            document.body.appendChild(textArea)
-            textArea.select()
-            document.execCommand("copy")
-            document.body.removeChild(textArea)
-            setCopiedIndex(index)
-            setTimeout(() => setCopiedIndex(null), 2000)
-        }
-    }, [])
-
-    const containerStyle = useMemo(
-        () => ({
-            minHeight: "800px",
-            backgroundColor: "#000000",
-            padding: "24px",
-            fontFamily:
-                "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-            color: "#ffffff",
-        }),
-        []
-    )
-
-    const inputSectionStyle = useMemo(
-        () => ({
-            backgroundColor: "#111111",
-            borderRadius: "12px",
-            border: "1px solid #333333",
-            padding: "24px",
-            marginBottom: "32px",
-        }),
-        []
-    )
-
-    const textareaStyle = useMemo(
-        () => ({
-            width: "100%",
-            height: "140px",
-            padding: "16px",
-            border: "1px solid #333333",
-            borderRadius: "8px",
-            resize: "none",
-            fontFamily: "inherit",
-            fontSize: "14px",
-            outline: "none",
-            boxSizing: "border-box",
-            backgroundColor: "#000000",
-            color: "#ffffff",
-        }),
-        []
-    )
-
-    const isGenerateDisabled = !script.trim() || isLoading
-
-    return (
-        <div style={containerStyle}>
-            <div style={{ maxWidth: "1000px", margin: "0 auto" }}>
-                {/* 헤더 */}
-                <div style={{ textAlign: "center", marginBottom: "32px" }}>
-                    <h1
-                        style={{
-                            fontSize: "32px",
-                            fontWeight: "700",
-                            color: "#ffffff",
-                            marginBottom: "8px",
-                            margin: "0 0 8px 0",
-                        }}
-                    >
-                        Hook Lab
-                    </h1>
-                    <p
-                        style={{
-                            color: "#888888",
-                            margin: "0",
-                            fontSize: "16px",
-                        }}
-                    >
-                        AI analyzes your script and recommends 5 perfect hooks
-                        to grab attention
-                    </p>
-                </div>
-
-                {/* 입력 섹션 */}
-                <div style={inputSectionStyle}>
-                    <div style={{ marginBottom: "20px" }}>
-                        <textarea
-                            value={script}
-                            onChange={(e) => setScript(e.target.value)}
-                            placeholder="Paste your video script here"
-                            style={textareaStyle}
-                        />
-                    </div>
-
-                    <div
-                        style={{
-                            display: "flex",
-                            gap: "16px",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            flexWrap: "wrap",
-                        }}
-                    >
-                        <div
-                            style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "16px",
-                            }}
-                        >
-                            <input
-                                type="file"
-                                accept=".txt"
-                                style={{ display: "none" }}
-                                ref={fileInputRef}
-                                onChange={handleFileUpload}
-                            />
-                            <button
-                                onClick={() => fileInputRef.current?.click()}
-                                style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "8px",
-                                    padding: "10px 16px",
-                                    color: "#888888",
-                                    border: "1px solid #333333",
-                                    borderRadius: "8px",
-                                    backgroundColor: "#111111",
-                                    cursor: "pointer",
-                                    fontSize: "14px",
-                                }}
-                            >
-                                📁 Upload .txt file
-                            </button>
-                            <span
-                                style={{ fontSize: "14px", color: "#666666" }}
-                            >
-                                Characters: {script.length}
-                            </span>
-                        </div>
-
-                        <button
-                            onClick={handleGenerate}
-                            disabled={isGenerateDisabled}
-                            style={{
-                                padding: "12px 24px",
-                                backgroundColor: isGenerateDisabled
-                                    ? "#333333"
-                                    : "#ffffff",
-                                color: isGenerateDisabled
-                                    ? "#666666"
-                                    : "#000000",
-                                borderRadius: "8px",
-                                fontWeight: "600",
-                                border: "none",
-                                cursor: isGenerateDisabled
-                                    ? "not-allowed"
-                                    : "pointer",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "8px",
-                                fontSize: "14px",
-                            }}
-                        >
-                            {isLoading ? "Generating..." : "Generate Hooks"}
-                        </button>
-                    </div>
-                </div>
-
-                {/* 에러 메시지 */}
-                {error && (
-                    <div
-                        style={{
-                            backgroundColor: "#2d1b1b",
-                            border: "1px solid #ef4444",
-                            borderRadius: "12px",
-                            padding: "20px",
-                            marginBottom: "32px",
-                            textAlign: "center",
-                        }}
-                    >
-                        <p
-                            style={{
-                                color: "#ef4444",
-                                fontSize: "16px",
-                                margin: "0",
-                                fontWeight: "500",
-                            }}
-                        >
-                            {error}
-                        </p>
-                    </div>
-                )}
-
-                {/* 결과 섹션 */}
-                {hooks.length > 0 && (
-                    <div
-                        style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: "24px",
-                        }}
-                    >
-                        {/* 옵션 바 */}
-                        <div
-                            style={{
-                                backgroundColor: "#111111",
-                                borderRadius: "12px",
-                                border: "1px solid #333333",
-                                padding: "16px",
-                            }}
-                        >
-                            <div
-                                style={{
-                                    display: "flex",
-                                    gap: "16px",
-                                    alignItems: "center",
-                                    justifyContent: "space-between",
-                                    flexWrap: "wrap",
-                                }}
-                            >
-                                <div
-                                    style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: "12px",
-                                    }}
-                                >
-                                    <span
-                                        style={{
-                                            fontSize: "14px",
-                                            fontWeight: "500",
-                                            color: "#ffffff",
-                                        }}
-                                    >
-                                        Tone:
-                                    </span>
-                                    <select
-                                        value={tone}
-                                        onChange={(e) =>
-                                            setTone(e.target.value)
-                                        }
-                                        style={{
-                                            padding: "6px 12px",
-                                            border: "1px solid #333333",
-                                            borderRadius: "6px",
-                                            outline: "none",
-                                            fontSize: "14px",
-                                            backgroundColor: "#000000",
-                                            color: "#ffffff",
-                                        }}
-                                    >
-                                        {TONE_OPTIONS.map((option) => (
-                                            <option key={option} value={option}>
-                                                {option}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <button
-                                    onClick={handleRegenerate}
-                                    disabled={isLoading}
-                                    style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: "8px",
-                                        padding: "8px 16px",
-                                        color: isLoading
-                                            ? "#666666"
-                                            : "#ffffff",
-                                        border: `1px solid ${isLoading ? "#666666" : "#ffffff"}`,
-                                        borderRadius: "8px",
-                                        backgroundColor: "transparent",
-                                        cursor: isLoading
-                                            ? "not-allowed"
-                                            : "pointer",
-                                        fontSize: "14px",
-                                    }}
-                                >
-                                    🔄 Regenerate
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* 훅 카드들 */}
-                        <div
-                            style={{
-                                display: "grid",
-                                gridTemplateColumns:
-                                    "repeat(auto-fit, minmax(300px, 1fr))",
-                                gap: "20px",
-                            }}
-                        >
-                            {hooks.map((hook, index) => {
-                                const scoreColor = getScoreColor(hook.score)
-                                const scoreLabel = getScoreLabel(hook.score)
-                                const isCopied = copiedIndex === index
-
-                                return (
-                                    <div
-                                        key={index}
-                                        onClick={() =>
-                                            copyToClipboard(hook.hook, index)
-                                        }
-                                        style={{
-                                            backgroundColor: "#111111",
-                                            borderRadius: "12px",
-                                            border: isCopied
-                                                ? "2px solid #ffffff"
-                                                : "1px solid #333333",
-                                            padding: "24px",
-                                            cursor: "pointer",
-                                            position: "relative",
-                                            transition: "all 0.2s ease",
-                                            transform: isCopied
-                                                ? "scale(1.02)"
-                                                : "scale(1)",
-                                        }}
-                                    >
-                                        {/* 복사 표시 */}
-                                        <div
-                                            style={{
-                                                position: "absolute",
-                                                top: "16px",
-                                                right: "16px",
-                                                display: "flex",
-                                                alignItems: "center",
-                                                gap: "8px",
-                                            }}
-                                        >
-                                            {isCopied && (
-                                                <span
-                                                    style={{
-                                                        fontSize: "12px",
-                                                        color: "#000000",
-                                                        fontWeight: "600",
-                                                        backgroundColor:
-                                                            "#ffffff",
-                                                        padding: "4px 8px",
-                                                        borderRadius: "4px",
-                                                    }}
-                                                >
-                                                    Copied!
-                                                </span>
-                                            )}
-                                            <span
-                                                style={{
-                                                    color: "#666666",
-                                                    fontSize: "18px",
-                                                }}
-                                            >
-                                                📋
-                                            </span>
-                                        </div>
-
-                                        {/* 훅 텍스트 */}
-                                        <div
-                                            style={{
-                                                paddingRight: "60px",
-                                                marginBottom: "20px",
-                                            }}
-                                        >
-                                            <p
-                                                style={{
-                                                    fontSize: "18px",
-                                                    fontWeight: "600",
-                                                    color: "#ffffff",
-                                                    lineHeight: "1.5",
-                                                    margin: "0",
-                                                }}
-                                            >
-                                                {hook.hook}
-                                            </p>
-                                        </div>
-
-                                        {/* 점수 */}
-                                        <div style={{ marginBottom: "16px" }}>
-                                            <div
-                                                style={{
-                                                    display: "flex",
-                                                    alignItems: "center",
-                                                    gap: "12px",
-                                                    marginBottom: "10px",
-                                                }}
-                                            >
-                                                <span
-                                                    style={{
-                                                        fontSize: "20px",
-                                                        fontWeight: "700",
-                                                        color: scoreColor,
-                                                    }}
-                                                >
-                                                    {hook.score}/100
-                                                </span>
-                                                <span
-                                                    style={{
-                                                        fontSize: "12px",
-                                                        padding: "2px 8px",
-                                                        borderRadius: "12px",
-                                                        backgroundColor:
-                                                            scoreColor,
-                                                        color: "#000000",
-                                                        fontWeight: "600",
-                                                    }}
-                                                >
-                                                    {scoreLabel}
-                                                </span>
-                                                {hook.tag && (
-                                                    <span
-                                                        style={{
-                                                            fontSize: "10px",
-                                                            backgroundColor:
-                                                                getTagColor(
-                                                                    hook.tag
-                                                                ),
-                                                            color: "#ffffff",
-                                                            padding: "2px 6px",
-                                                            borderRadius: "8px",
-                                                            fontWeight: "600",
-                                                        }}
-                                                    >
-                                                        {hook.tag}
-                                                    </span>
-                                                )}
-                                                {hook.enhanced && (
-                                                    <span
-                                                        style={{
-                                                            fontSize: "10px",
-                                                            backgroundColor: "#fbbf24",
-                                                            color: "#000000",
-                                                            padding: "2px 6px",
-                                                            borderRadius: "8px",
-                                                            fontWeight: "600",
-                                                            marginLeft: "4px"
-                                                        }}
-                                                    >
-                                                        ⚡ PROVEN
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <div
-                                                style={{
-                                                    width: "100%",
-                                                    backgroundColor: "#000000",
-                                                    borderRadius: "10px",
-                                                    height: "8px",
-                                                }}
-                                            >
-                                                <div
-                                                    style={{
-                                                        height: "8px",
-                                                        borderRadius: "10px",
-                                                        backgroundColor:
-                                                            scoreColor,
-                                                        width: `${hook.score}%`,
-                                                        transition:
-                                                            "width 0.8s ease",
-                                                    }}
-                                                />
-                                            </div>
-                                        </div>
-
-                                        {/* 설명 */}
-                                        <p
-                                            style={{
-                                                fontSize: "14px",
-                                                color: "#888888",
-                                                margin: "0",
-                                                lineHeight: "1.5",
-                                            }}
-                                        >
-                                            {hook.reason}
-                                        </p>
-                                    </div>
-                                )
-                            })}
-                        </div>
-                    </div>
-                )}
-
-                {/* 로딩 상태 */}
-                {isLoading && hooks.length === 0 && (
-                    <div style={{ textAlign: "center", padding: "60px 0" }}>
-                        <div
-                            style={{
-                                width: "40px",
-                                height: "40px",
-                                border: "3px solid #333333",
-                                borderTop: "3px solid #ffffff",
-                                borderRadius: "50%",
-                                margin: "0 auto 20px",
-                                animation: "spin 1s linear infinite",
-                            }}
-                        />
-                        <p
-                            style={{
-                                color: "#888888",
-                                fontSize: "16px",
-                                margin: "0",
-                            }}
-                        >
-                            Analyzing your script and generating viral hooks...
-                        </p>
-                    </div>
-                )}
-            </div>
-
-            <style>{`
-                @keyframes spin {
-                    0% { transform: rotate(0deg); }
-                    100% { transform: rotate(360deg); }
-                }
-            `}</style>
-        </div>
-    )
+// 캐시 상태 확인 함수 (디버깅용)
+export function getCacheStatus() {
+  return {
+    size: cache.size,
+    keys: Array.from(cache.keys())
+  }
 }

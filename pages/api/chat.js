@@ -30,43 +30,67 @@ class HookService {
         }
 
         try {
-            // 🔥 강화된 프롬프트
+            // 🔥 강화된 프롬프트 - 맥락 분석 추가
             const userPrompt = `
 You are the TOP 0.1% viral hook specialist who's created hooks for MrBeast, Alex Hormozi, and top creators.
 
-CONTEXT:
-Platform: TikTok/Instagram Reels/YouTube Shorts
-Goal: Stop scrolling within 0.5 seconds
+CRITICAL: ANALYZE THE SCRIPT CONTEXT FIRST!
 
-ANALYZE THE SCRIPT:
+SCRIPT TO ANALYZE:
 "${hookData.script}"
 
-TONE: ${hookData.tone}
-${hookData.tone === 'Provocative' ? 'Be bold, controversial, challenge beliefs' : ''}
-${hookData.tone === 'Calm' ? 'Be soothing, trustworthy, gentle but intriguing' : ''}
-${hookData.tone === 'Professional' ? 'Use authority, data, expert positioning' : ''}
-${hookData.tone === 'Humorous' ? 'Be relatable, self-deprecating, use meme culture' : ''}
-${hookData.tone === 'Dramatic' ? 'Create tension, cliffhangers, emotional peaks' : ''}
+STEP 1: UNDERSTAND THE SCRIPT
+- What is the main topic/theme?
+- What emotion does it evoke? (surprise, fear, joy, anger, curiosity)
+- Who is the target audience?
+- What's the key value/payoff for viewers?
+- Is there a transformation, discovery, or conflict?
 
-GENERATE 5 HOOKS:
-First 3: Use PROVEN viral patterns (10M+ views)
-Last 2: Be CREATIVE with POV/Story time/trending formats
+STEP 2: MATCH HOOKS TO CONTEXT
+Your hooks MUST:
+- Directly relate to the script's main point
+- Use specific keywords from the script
+- Match the emotional tone of the content
+- Promise what the script actually delivers
+
+TONE: ${hookData.tone}
+${hookData.tone === 'Provocative' ? 'Challenge beliefs, be controversial but relevant to the script' : ''}
+${hookData.tone === 'Calm' ? 'Be gentle but ensure hooks match the scripts peaceful message' : ''}
+${hookData.tone === 'Professional' ? 'Use data/authority that connects to the scripts expertise' : ''}
+${hookData.tone === 'Humorous' ? 'Find the funny angle IN THE SCRIPT, dont force unrelated humor' : ''}
+${hookData.tone === 'Dramatic' ? 'Amplify the tension/conflict already present in the script' : ''}
+
+GENERATE 5 CONTEXTUAL HOOKS:
+1-3: Use proven patterns but WITH SCRIPT'S SPECIFIC WORDS
+4-5: Creative hooks that highlight the script's unique angle
 
 RULES:
 • MAX 10 words
-• First 3 words MUST grab attention
-• Use numbers when possible
-• Include: fear, curiosity, surprise
-• Make it about THEM ("You've been...", "Your...")
+• Must include at least 1 KEY WORD from the script
+• Must promise what the script delivers (no clickbait)
+• First 3 words = instant attention
+• Make viewer think "this is about ME"
+
+BAD EXAMPLE (generic):
+"Nobody talks about this trick" ❌
+
+GOOD EXAMPLE (contextual):
+If script is about iPhone settings:
+"Your iPhone's hidden battery saver" ✅
+
+If script is about pasta:
+"Italian grandmas hate this pasta mistake" ✅
 
 OUTPUT FORMAT:
-1. [Hook max 10 words] | [Why it works] | [TAG]
-2. [Hook max 10 words] | [Why it works] | [TAG]
-3. [Hook max 10 words] | [Why it works] | [TAG]
-4. [Hook max 10 words] | [Why it works] | [TAG]
-5. [Hook max 10 words] | [Why it works] | [TAG]
+1. [Hook with script keywords] | [Why it works for THIS script] | [TAG]
+2. [Hook with script keywords] | [Why it works for THIS script] | [TAG]
+3. [Hook with script keywords] | [Why it works for THIS script] | [TAG]
+4. [Hook with script keywords] | [Why it works for THIS script] | [TAG]
+5. [Hook with script keywords] | [Why it works for THIS script] | [TAG]
 
-TAGS: CURIOSITY, FEAR, FOMO, SHOCK, SECRET, CONTRAST, EMOTIONAL, URGENCY, FORBIDDEN`
+TAGS: CURIOSITY, FEAR, FOMO, SHOCK, SECRET, CONTRAST, EMOTIONAL, URGENCY, FORBIDDEN
+
+Remember: Generic hooks fail. Contextual hooks go viral.`
 
             const response = await fetch(
                 `${API_BASE_URL}/api/chat?q=${encodeURIComponent(userPrompt)}`
@@ -215,39 +239,99 @@ const PROVEN_VIRAL_HOOKS = {
     ]
 }
 
-// 스크립트 분석 함수
+// 🔥 개선된 스크립트 맥락 분석 함수
 function analyzeScriptContext(script) {
     const scriptLower = script.toLowerCase()
-    if (scriptLower.includes('discover') || scriptLower.includes('secret')) return 'curiosity'
-    if (scriptLower.includes('feel') || scriptLower.includes('life')) return 'emotional'
-    if (scriptLower.includes('try') || scriptLower.includes('challenge')) return 'challenge'
-    if (scriptLower.includes('vs') || scriptLower.includes('better')) return 'comparison'
-    return 'shock'
-}
-
-// 템플릿을 실제 훅으로 변환
-function generateHookFromTemplate(template, script, tone) {
-    let hook = template.template
-    const keywords = script.split(' ').filter(w => w.length > 4).slice(0, 3)
     
-    const replacements = {
-        '{topic}': keywords[0] || 'this',
-        '{achievement}': 'made it work',
-        '{time}': '30 days',
-        '{challenge}': 'do this',
-        '{group}': 'pros',
-        '{oldway}': 'Old way',
-        '{newway}': 'This way'
+    // 핵심 키워드 추출
+    const keywords = {
+        curiosity: ['discover', 'secret', 'hidden', 'nobody knows', 'find out', 'reveal', 'truth'],
+        emotional: ['feel', 'life', 'change', 'transform', 'journey', 'story', 'experience'],
+        challenge: ['try', 'test', 'challenge', 'attempt', 'fail', 'succeed', 'impossible'],
+        comparison: ['vs', 'better', 'worse', 'instead', 'wrong', 'right', 'mistake'],
+        shock: ['crazy', 'shock', 'accident', 'unexpected', 'suddenly', 'never', 'always']
     }
     
+    // 각 카테고리 점수 계산
+    const scores = {}
+    for (const [category, words] of Object.entries(keywords)) {
+        scores[category] = words.filter(word => scriptLower.includes(word)).length
+    }
+    
+    // 가장 높은 점수의 카테고리 반환
+    const bestCategory = Object.entries(scores)
+        .sort(([,a], [,b]) => b - a)[0][0]
+    
+    return bestCategory
+}
+
+// 🔥 개선된 템플릿 변환 - 스크립트 맥락 반영
+function generateHookFromTemplate(template, script, tone) {
+    let hook = template.template
+    
+    // 스크립트에서 중요 단어 추출 (명사, 동사 위주)
+    const words = script.split(/\s+/)
+    const importantWords = words
+        .filter(w => w.length > 4 && !['this', 'that', 'with', 'from', 'have'].includes(w.toLowerCase()))
+        .slice(0, 5)
+    
+    // 스크립트의 핵심 주제 파악
+    const scriptLower = script.toLowerCase()
+    let mainTopic = importantWords[0] || 'this'
+    
+    // 특정 주제 감지
+    if (scriptLower.includes('iphone') || scriptLower.includes('phone')) mainTopic = 'iPhone'
+    else if (scriptLower.includes('money') || scriptLower.includes('rich')) mainTopic = 'money'
+    else if (scriptLower.includes('relationship') || scriptLower.includes('dating')) mainTopic = 'dating'
+    else if (scriptLower.includes('food') || scriptLower.includes('recipe')) mainTopic = 'recipe'
+    else if (scriptLower.includes('workout') || scriptLower.includes('fitness')) mainTopic = 'fitness'
+    
+    // 동적 변수 교체
+    const replacements = {
+        '{topic}': mainTopic,
+        '{achievement}': importantWords[1] ? `mastered ${importantWords[1]}` : 'made it work',
+        '{time}': script.match(/\d+\s*(day|week|month|year)/i)?.[0] || '30 days',
+        '{challenge}': importantWords[2] ? `do ${importantWords[2]}` : 'do this',
+        '{group}': scriptLower.includes('everyone') ? 'everyone' : 'most people',
+        '{oldway}': importantWords[1] ? `Using ${importantWords[1]}` : 'Old method',
+        '{newway}': importantWords[2] ? `Try ${importantWords[2]}` : 'This method',
+        '{discovery}': importantWords.slice(0, 3).join(' ') || 'this secret',
+        '{industry}': mainTopic.includes('fitness') ? 'fitness' : mainTopic.includes('money') ? 'finance' : 'industry',
+        '{dramatic event}': importantWords.slice(0, 2).join(' ') + ' happened' || 'this happened',
+        '{shocking reason}': `your ${mainTopic} problem` || 'this happens',
+        '{number}': script.match(/\d+/)?.[0] || Math.floor(Math.random() * 10) + 3,
+        '{trait}': mainTopic || 'pro',
+        '{things}': mainTopic + 's' || 'methods'
+    }
+    
+    // 템플릿 변수 교체
     Object.keys(replacements).forEach(key => {
         hook = hook.replace(key, replacements[key])
     })
     
+    // 톤별 조정 (맥락 유지)
+    if (tone === 'Provocative' && !hook.includes('!')) {
+        hook = hook.charAt(0).toUpperCase() + hook.slice(1) + '!'
+    } else if (tone === 'Calm') {
+        hook = hook.replace(/!+/g, '.').toLowerCase()
+        hook = hook.charAt(0).toUpperCase() + hook.slice(1)
+    } else if (tone === 'Humorous' && !hook.includes('😂')) {
+        const funnyEmojis = ['😂', '💀', '🤣', '😭']
+        hook = hook + ' ' + funnyEmojis[Math.floor(Math.random() * funnyEmojis.length)]
+    } else if (tone === 'Professional') {
+        hook = hook.replace(/!+/g, ':')
+    }
+    
+    // 단어 수 체크 (10단어 제한)
+    const words = hook.split(' ')
+    if (words.length > 10) {
+        hook = words.slice(0, 10).join(' ')
+    }
+    
     return {
         hook: hook,
         score: template.score + Math.floor(Math.random() * 5),
-        reason: template.reason,
+        reason: template.reason + ' (Contextually matched)',
         tag: template.tag,
         isProven: true,
         enhanced: true
@@ -261,6 +345,8 @@ function enhanceWeakHooks(hooks, script, tone) {
     const weakIndices = weakHooks.map(weak => hooks.indexOf(weak))
     
     const category = analyzeScriptContext(script)
+    console.log(`📊 Script Analysis: Detected "${category}" context from script`)
+    
     const templatePool = PROVEN_VIRAL_HOOKS[category]
     
     const enhancedHooks = [...hooks]
@@ -274,6 +360,7 @@ function enhanceWeakHooks(hooks, script, tone) {
         
         usedIndices.push(randomIndex)
         const newHook = generateHookFromTemplate(templatePool[randomIndex], script, tone)
+        console.log(`🔄 Replaced weak hook (${hooks[index].score}pts) with proven pattern (${newHook.score}pts)`)
         enhancedHooks[index] = newHook
     })
     
